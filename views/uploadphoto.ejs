@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <title>Photo Upload</title>
+    <script src="https://www.gstatic.com/firebasejs/8.0.2/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.0.2/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.0.2/firebase-storage.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/7.19.1/firebase-database.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
+</head>
+<style>
+    body{
+        font-family: sans-serif;
+    }
+    .bg-image {
+        position: absolute;
+        top: 0px;
+        left: 50%;
+        transform: translateX(-50%);
+        max-width: 1350px;
+        min-width: 100%;
+        z-index: -1;
+        height: 100vh;
+    }
+    .text-center-flex { 
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        height: 100vh;
+        text-align: center;
+    }
+    .slide {
+        display: none;
+    }
+    .slide.active {
+        display: block;
+    }
+    #cameraSelect {
+        margin-bottom: 10px;
+        display: none; /* Initially hidden */
+    }
+    #video {
+        transform: scaleX(-1); /* Mirror the video horizontally */
+    }
+
+    video {
+    object-fit: cover; /* Ensure the video covers the area without stretching */
+    max-width: 100%; /* Prevents it from exceeding its container */
+    height: auto; /* Adjust the height automatically */
+}
+
+video, canvas {
+    width: 731px; /* Fixed 92dth */
+    height: 388px; /* Fixed height */
+    object-fit: cover; /* Ensure the video/canvas covers the area without stretching */
+}
+
+</style>
+<body>
+    <img class="bg-image" src="/static/images/Be a part of.png" alt="">
+    <div class="container text-center-flex">
+        
+        <!-- First Slide: Start screen -->
+        <div id="slide1" class="slide active" style="position: relative;width: 100vw;height: 100vh;">
+            <!-- <h5>Be a part of Bhima Jewellers Logo Launch!</h5> -->
+            <button class="btn btn-md btn-warning mt-3" style="    position: absolute;
+            bottom: 34%;
+            left: 50%;
+            z-index: 1;
+            transform: translateX(-50%);" id="start">Start</button>
+        </div>
+
+        <!-- Second Slide: Video capture -->
+        <div id="slide2" class="slide p-2">
+            <select id="cameraSelect" class="form-select"></select>
+            <video id="video" style="width: 731px; height: 388px;" autoplay playsinline></video>
+            <br>
+            <br>
+            <button class="btn btn-md btn-warning mt-3" id="snap">Capture Photo</button>
+        </div>
+
+        <!-- Third Slide: Show captured image and submit -->
+        <div id="slide3" class="slide">
+            <canvas id="canvas" style="width: 731px; height: 388px;border-radius: 30px;"></canvas>
+            <br>
+            <br>
+            <div class="w-100 text-center d-flex align-items-center justify-content-center">
+                <!-- <label style="margin-bottom:8px;" for="name">Name :</label> -->
+                <input style="width: 300px; margin-bottom:8px; margin-left: 10px;" placeholder="Name*" class="form-control" type="text" name="name" id="name">
+            </div>
+            <button class="btn btn-md btn-warning mt-3" id="upload">Submit</button>
+        </div>
+
+        <!-- Fourth Slide: Submission confirmation -->
+        <div id="slide4" class="slide">
+            <img class="bg-image" src="/static/images/Upload Successful Screen.png" alt="">
+            <!-- <h4>Photo Submitted Successfully!</h4> -->
+            <button class="btn btn-md btn-warning mt-3" style="    position: absolute;
+            bottom: 34%;
+            left: 50%;
+            z-index: 1;
+            transform: translateX(-50%);" id="home">Home</button>
+        </div>
+
+    </div>
+
+    <script>
+        // Firebase initialization
+        var firebaseConfig = {
+            apiKey: "AIzaSyDhyZp6xSQeZZBvKnPqkE5mwoUTDIiBjA0",
+            authDomain: "userposts-64965.firebaseapp.com",
+            projectId: "userposts-64965",
+            storageBucket: "userposts-64965.appspot.com",
+            messagingSenderId: "483796190733",
+            appId: "1:483796190733:web:e29eef974a10885c427744",
+            measurementId: "G-N8E9G16ELR"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const storage = firebase.storage();
+
+        const video = document.getElementById('video');
+
+        video.addEventListener('pause', (event) => {
+    if (event.defaultPrevented) return; // Ignore if the event was already handled
+
+    video.play(); // Resume playing immediately if it pauses unexpectedly
+});
+
+        const canvas = document.getElementById('canvas');
+        const context = canvas.getContext('2d');
+        
+
+        const slide1 = document.getElementById('slide1');
+        const slide2 = document.getElementById('slide2');
+        const slide3 = document.getElementById('slide3');
+        const slide4 = document.getElementById('slide4');
+
+        const cameraSelect = document.getElementById('cameraSelect');
+        const captureButton = document.getElementById('snap');
+
+        const locationParam = new URLSearchParams(window.location.search).get('location');
+        function showSlide(slide) {
+        if(!locationParam) return alert('Please use correct url')
+            document.querySelectorAll('.slide').forEach(s => s.classList.remove('active'));
+            slide.classList.add('active');
+        }
+
+        function startCamera() {
+            
+            let currentStream;
+
+            navigator.mediaDevices.enumerateDevices()
+                .then(devices => {
+                    const cameras = devices.filter(device => device.kind === 'videoinput');
+                    cameras.forEach(camera => {
+                        const option = document.createElement('option');
+                        option.value = camera.deviceId;
+                        option.text = camera.label || `Camera ${cameraSelect.length + 1}`;
+                        cameraSelect.appendChild(option);
+                    });
+                    if (cameras.length > 0) {
+                        switchCamera(cameras[0].deviceId);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error enumerating devices:', error);
+                });
+
+            function switchCamera(deviceId) {
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                }
+                navigator.mediaDevices.getUserMedia({ video: { deviceId: deviceId, width: { ideal: 388}, height: { ideal: 731 } } })
+                    .then(stream => {
+                        video.srcObject = stream;
+                        currentStream = stream;
+                    })
+                    .catch(error => {
+                        console.error('Error switching camera:', error);
+                    });
+            }
+
+            cameraSelect.addEventListener('change', () => {
+                switchCamera(cameraSelect.value);
+            });
+        }
+
+        captureButton.addEventListener('click', () => {
+            const countdownElement = document.createElement('div');
+            countdownElement.style.position = 'absolute';
+            countdownElement.style.top = '50%';
+            countdownElement.style.left = '50%';
+            countdownElement.style.transform = 'translate(-50%, -50%)';
+            countdownElement.style.fontSize = '5em';
+            countdownElement.style.color = '#FFF';
+            countdownElement.style.zIndex = '1000';
+            document.body.appendChild(countdownElement);
+
+            let countdown = 3;
+            countdownElement.textContent = countdown;
+
+            const countdownInterval = setInterval(() => {
+                countdown--;
+                
+                if (countdown > 0 ) {
+                    countdownElement.textContent = countdown;
+                } else {
+                    clearInterval(countdownInterval);
+                    document.body.removeChild(countdownElement);
+                    startCapture();
+                }
+            }, 1000);
+        });
+
+        function startCapture() {
+    // Set the canvas size to match the video's display size (not its natural size)
+    const videoStyles = window.getComputedStyle(video);
+    const videoWidth = parseInt(videoStyles.getPropertyValue('width'));
+    const videoHeight = parseInt(videoStyles.getPropertyValue('height'));
+
+    canvas.width = videoWidth ;
+    canvas.height = videoHeight;
+
+    // Apply horizontal flip and draw the video frame to the canvas
+    context.save(); // Save the current context state
+    context.scale(-1, 1); // Flip the context horizontally
+    context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height); // Adjust the x position to match the flip
+    context.restore(); // Restore the original context state
+
+    showSlide(slide3);  // Go to the next slide to show the captured image
+}
+
+
+
+        // Upload photo
+        document.getElementById('upload').addEventListener('click', () => {
+
+            let uploadbtn = document.getElementById('upload')
+            uploadbtn.disabled = true;
+            uploadbtn.innerHTML = "Submitting.."
+            let name = document.getElementById('name').value
+            if(name == ""){
+                alert('Please enter name');
+                return
+            }
+            canvas.toBlob(blob => {
+                const storageRef = storage.ref();
+                const photoRef = storageRef.child(`photos/${Date.now()}.jpg`);
+
+                photoRef.put(blob).then(snapshot => {
+                    snapshot.ref.getDownloadURL().then(url => {
+                        fetch('/savePhoto', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ imageUrl: url, location: locationParam, name })
+                        }).then(() => {
+                            const socket = io();
+                            let datatosend = {
+                                url,
+                                location : locationParam
+                            }
+                            socket.emit('newPhoto', datatosend);
+                            showSlide(slide4);  // Show submission confirmation slide
+                        });
+                    });
+                });
+            });
+        });
+
+        // Home button: Refresh the page
+        document.getElementById('home').addEventListener('click', () => {
+            location.reload();
+        });
+
+        // Start button: Go to video capture slide
+        document.getElementById('start').addEventListener('click', () => {
+            showSlide(slide2);
+            startCamera();
+        });
+    </script>
+</body>
+</html>

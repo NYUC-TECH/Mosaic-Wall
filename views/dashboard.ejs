@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard</title>
+</head>
+<body>
+    <button id="revealLogo">Reveal Logo</button>
+    <button id="resetLogo">Reset</button>
+
+    <button id="download" onclick="fetchAndDrawOldPhotos()">Download</button>
+    <script>
+        const locationParam = new URLSearchParams(window.location.search).get('location');
+        if(!locationParam)  alert('Please use correct url')
+        document.getElementById('revealLogo').addEventListener('click', () => {
+            fetch('/revealLogo', { method: 'POST' ,  headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ location: locationParam})});
+        });
+        document.getElementById('resetLogo').addEventListener('click', () => {
+            fetch('/resetLogo', { method: 'POST' ,  headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ location: locationParam})});
+        });
+    </script>
+
+    <script>
+      async function fetchAndDrawOldPhotos() {
+    try {
+        const locationParam = new URLSearchParams(window.location.search).get('location');
+        if (!locationParam) return alert('Please use the correct URL');
+
+        console.log(locationParam, 'locationParam');
+        
+        const response = await fetch('/api/photos', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ location: locationParam })
+        });
+
+        const photos = await response.json();
+
+        photos.forEach((photo) => {
+            // Create an image element
+            const img = document.createElement('img');
+          
+            img.src = photo.imageUrl;
+            img.alt = `${photo.name}_image`;
+
+            // Append the image to the document body (or any other container)
+            document.body.appendChild(img);
+
+            
+        });
+    } catch (error) {
+        console.error('Error fetching photos:', error);
+    }
+}
+
+
+
+    </script>
+</body>
+</html>

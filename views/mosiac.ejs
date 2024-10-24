@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mosaic Wall</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: black;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="mosaicCanvas"></canvas>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const canvas = document.getElementById('mosaicCanvas');
+        const context = canvas.getContext('2d');
+        const socket = io();
+
+        let photoCount = 0;
+        const maxPhotos = 800;
+        const gridSize = Math.ceil(Math.sqrt(maxPhotos));
+        let photoSize = { width: canvas.width / gridSize, height: canvas.height / gridSize };
+        let positions = [];
+        let availablePositions = [];
+        let usedPositions = new Set(); // Track used positions
+        let drawnImages = []; // Array to store drawn image URLs and their positions
+
+        // Adjust canvas size based on window size
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            photoSize = { width: canvas.width / gridSize, height: canvas.height / gridSize };
+
+            // Reset and shuffle positions
+            positions = [];
+            availablePositions = [];
+            for (let i = 0; i < gridSize; i++) {
+                for (let j = 0; j < gridSize; j++) {
+                    const pos = { x: i * photoSize.width, y: j * photoSize.height };
+                    positions.push(pos);
+                    availablePositions.push(pos);
+                }
+            }
+            shuffleArray(availablePositions);
+        }
+        const locationParam = new URLSearchParams(window.location.search).get('location');
+
+        // Shuffle function for randomizing positions
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        // Get a free position from available positions
+        function getFreePosition() {
+            while (availablePositions.length > 0) {
+                const position = availablePositions.pop();
+                if (!usedPositions.has(JSON.stringify(position))) {
+                    usedPositions.add(JSON.stringify(position));
+                    return position;
+                }
+            }
+            return null; // No free position available
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Function to draw an image on the canvas with a gold overlay
+        function drawImage(imageUrl, position) {
+            const img = new Image();
+            img.src = imageUrl;
+            img.onload = () => {
+                context.drawImage(img, position.x, position.y, photoSize.width, photoSize.height);
+                context.fillStyle = 'rgba(229,193,92, 0.7)'; // Gold color with 50% opacity
+                context.fillRect(position.x, position.y, photoSize.width, photoSize.height);
+            };
+        }
+
+        // Function to redraw all images to preserve them
+        function redrawAllImages() {
+            drawnImages.forEach(({ imageUrl, position }) => {
+                drawImage(imageUrl, position);
+            });
+        }
+
+        // Function to draw an image with zoom-out animation and gold overlay
+        function drawImageWithAnimation(imageUrl) {
+    const position = getFreePosition(); // Get a new free position
+    if (!position) {
+        console.error('No available positions left for new images.');
+        return;
+    }
+
+    const img = new Image();
+    img.src = imageUrl;
+    img.onload = () => {
+        const aspectRatio = img.width / img.height;
+
+        // Calculate the final size based on the aspect ratio
+        let finalWidth, finalHeight;
+        if (aspectRatio >= 1) {
+            finalWidth = photoSize.width;
+            finalHeight = photoSize.width / aspectRatio;
+        } else {
+            finalWidth = photoSize.height * aspectRatio;
+            finalHeight = photoSize.height;
+        }
+
+        // Start the image 5 times larger
+        const startWidth = finalWidth * 5;
+        const startHeight = finalHeight * 5;
+
+        const startX = (canvas.width - startWidth) / 2;
+        const startY = (canvas.height - startHeight) / 2;
+
+        // Draw the image 5x larger and centered for 5 seconds
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(img, startX, startY, startWidth, startHeight);
+
+        // Wait for 5 seconds before starting the zoom-out animation
+        setTimeout(() => {
+            const animationDuration = 1000; // 1 second
+            const frameRate = 60; // Smoother animation
+            const totalFrames = animationDuration / (1000 / frameRate);
+            let currentFrame = 0;
+
+            function animate() {
+                context.clearRect(0, 0, canvas.width, canvas.height); // Clear the canvas
+
+                // Interpolate the current size and position based on the frame
+                const currentWidth = startWidth - (startWidth - finalWidth) * (currentFrame / totalFrames);
+                const currentHeight = startHeight - (startHeight - finalHeight) * (currentFrame / totalFrames);
+                const currentX = startX + (position.x - startX) * (currentFrame / totalFrames);
+                const currentY = startY + (position.y - startY) * (currentFrame / totalFrames);
+
+                // Draw the image at the interpolated size and position
+                context.drawImage(img, currentX, currentY, currentWidth, currentHeight);
+
+                currentFrame++;
+
+                if (currentFrame < totalFrames) {
+                    requestAnimationFrame(animate);
+                } else {
+                    // After the animation, clear the canvas and redraw all images
+                    context.clearRect(0, 0, canvas.width, canvas.height);
+                    redrawAllImages();
+
+                    // Draw the final position of the new image with a gold overlay
+                    drawImage(imageUrl, position);
+
+                    // Store the drawn image URL and position
+                    drawnImages.push({ imageUrl, position });
+                    photoCount++;
+                }
+            }
+
+            animate();
+        }, 5000); // 5 seconds delay before starting the zoom-out animation
+    };
+}
+
+
+
+       // Fetch stored photos and draw them on the canvas
+        async function fetchAndDrawOldPhotos() {
+            try {
+
+                const locationParam = new URLSearchParams(window.location.search).get('location');
+                if(!locationParam) return alert('Please use correct url')
+                console.log(locationParam, 'locationParam')
+                const response = await fetch('/api/photos', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ location: locationParam})
+                        });
+                const photos = await response.json();
+                photos.forEach(photo => {
+                    const position = getFreePosition();
+                    if (position) {
+                        drawImage(photo.imageUrl, position);
+                        drawnImages.push({ imageUrl: photo.imageUrl, position });
+                        photoCount++;
+                    }
+                });
+            } catch (error) {
+                console.error('Error fetching photos:', error);
+            }
+        }
+
+        // Fetch old photos on page load
+        window.onload = fetchAndDrawOldPhotos;
+
+        socket.on('updateCanvas'+locationParam, (imageUrl) => {
+            drawImageWithAnimation(imageUrl.url);
+        });
+
+        // Function to fill remaining slots with images
+        function fillRemainingSlots() {
+            if (photoCount < maxPhotos) {
+                const randomImageUrl = drawnImages[Math.floor(Math.random() * drawnImages.length)].imageUrl;
+                const position = getFreePosition();
+                if (position) {
+                    drawImage(randomImageUrl, position);
+                    requestAnimationFrame(fillRemainingSlots); // Continue filling slots with next frame
+                } else {
+                    drawLogo(); // Draw logo once all slots are filled
+                }
+            } else {
+                drawLogo(); // Draw logo once all slots are filled
+            }
+        }
+
+        // Function to draw the logo and gold overlay
+        function drawLogo() {
+            context.fillStyle = 'rgba(229,193,92, 0.7)'; // Gold color with 50% opacity
+            context.fillRect(0, 0, canvas.width, canvas.height);
+
+            const logo = new Image();
+            logo.src = '/static/images/PhotoCollage.jpg';
+            logo.onload = () => {
+                context.globalAlpha = 1; // Adjust the opacity of the logo
+                context.drawImage(logo, 0, 0, canvas.width, canvas.height);
+                context.globalAlpha = 1;
+            };
+        }
+        
+        socket.on('revealLogo'+locationParam, () => {
+            fillRemainingSlots(); // Start filling slots and then reveal the logo
+        });
+
+        socket.on('resetLogo'+locationParam, () => {
+            console.log('reset')
+            location.reload()// Start filling slots and then reveal the logo
+        });
+        console.log('resettest')
+    </script>
+</body>
+</html> 
