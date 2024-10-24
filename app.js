@@ -13,7 +13,7 @@ const io = socketIo(server);
 app.use(bodyParser.json());
 
 // MongoDB setup
-mongoose.connect('mongodb+srv://admin:admin@cluster0.blnsu.mongodb.net/mosiac?', { useNewUrlParser: true, useUnifiedTopology: true });
+mongoose.connect('mongodb+srv://admin2:admin2@cluster0.vgodb.mongodb.net/mosaic?', { useNewUrlParser: true, useUnifiedTopology: true });
 const photoSchema = new mongoose.Schema({
     imageUrl: String,
     location: String,
@@ -40,16 +40,21 @@ app.post('/savePhoto', (req, res) => {
 const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30 in milliseconds
 const adjustedDate = new Date(utcDate.getTime() + istOffset);
     const photo = new Photo({ imageUrl, location, name, createdAt : adjustedDate });
-    photo.save().then(() => res.status(200).send('Photo saved'));
+    photo.save().then(() => {
+        res.status(200).send('Photo saved')
+        console.log('dfghjk')
+    });
+
 });
 
 app.post('/api/photos', async (req, res) => {
     try {
-    const {  location } = req.body;
-        const photos = await Photo.find({location}); // Fetch all photos from the database
+
+        const photos = await Photo.find({}); // Fetch all photos from the database
         console.log(photos, 'photos')
         res.json(photos);
     } catch (error) {
+        console.log(error)
         res.status(500).json({ message: 'Error fetching photos', error });
     }
 });
