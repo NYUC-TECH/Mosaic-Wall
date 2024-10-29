@@ -454,6 +454,7 @@
         function drawImageWithAnimation(imageUrl) {
     const position = getFreePosition(); // Get a new free position
     if (!position) {
+        redrawAllImages()
         console.error('No available positions left for new images.');
         return;
     }
